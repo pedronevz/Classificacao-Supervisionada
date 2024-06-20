@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit, train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import classification_report, accuracy_score, roc_curve, auc
@@ -14,7 +14,6 @@ from sklearn.decomposition import PCA
 nltk.download('stopwords') # stopwords, palavras naturais sem influência no programa 
 
 def preprocess_text(text):
-    # transforma texto em minúsculo
     text = text.lower()
     # remove pontuação
     text = text.translate(str.maketrans('', '', string.punctuation))
@@ -23,6 +22,7 @@ def preprocess_text(text):
     words = text.split()
     words = [word for word in words if word not in stop_words] # ['expression' for 'item' in 'iterable' if 'condition']
     return ' '.join(words)
+    # transforma texto em minúsculo
 
 #print(preprocess_text("Hello! This is a sample text. It includes punctuation, stopwords, and Mixed CASE."))
 dados = pd.read_csv('LLM.csv')
@@ -36,16 +36,22 @@ dados['Text'] = dados['Text'].apply(preprocess_text) # o método apply aplica pr
 textos = dados['Text']
 labels = dados['Label']
 
+
+        #== KNN ==#
 # textos em vetores
 vectorizer = TfidfVectorizer()
 X_tfidf = vectorizer.fit_transform(textos) # transforma os textos em vetores TF-IDF, no formato '(i, j) valor'
 
+sss = StratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=42) # 30% dos dados para teste, 70% para treino
+
 # divisão dos dados em treinamento e teste
-xTrain, xTest, yTrain, yTest = train_test_split(X_tfidf, labels, test_size=0.3, random_state=42) # 30% dos dados para teste, 70% para treino
+for train_index, test_index in sss.split(X_tfidf, labels):
+    xTrain, xTest = X_tfidf[train_index], X_tfidf[test_index]
+    yTrain, yTest = labels.iloc[train_index], labels.iloc[test_index]
 
 # treinar o classificador k-NN
 knn = KNeighborsClassifier(n_neighbors=5)
-knn.fit(xTrain, yTrain) 
+knn.fit(xTrain, yTrain)
 
 # previsões nos dados de teste
 predicao = knn.predict(xTest)
@@ -53,28 +59,6 @@ predicao = knn.predict(xTest)
 # avaliar o desempenho do modelo
 print("Accuracy:", accuracy_score(yTest, predicao))
 print(classification_report(yTest, predicao))
-
-
-## Gráficos
-# plotar gráfico PCA (padrão)
-plt.figure(figsize=(10, 5))
-pca = PCA(n_components=2)
-xTest_2D = pca.fit_transform(xTest.toarray())
-
-plt.subplot(1, 2, 1)
-for i, class_label in enumerate(['ai', 'student']):
-    plt.scatter(xTest_2D[yTest == class_label, 0], xTest_2D[yTest == class_label, 1], 
-                label=class_label, alpha=0.5)
-
-plt.scatter(xTest_2D[yTest == 'ai', 0], xTest_2D[yTest == 'ai', 1], color='blue', alpha=0.5, label='AI')
-plt.scatter(xTest_2D[yTest == 'student', 0], xTest_2D[yTest == 'student', 1], color='orange', alpha=0.5, label='Student')
-plt.title('PCA')
-plt.xlabel('1')
-plt.ylabel('2')
-
-# ROC e AUC
-# probabilidades de previsão
-yProb = knn.predict_proba(xTest)
 
 """ 
 ### caso queiramos ver as frases e as probabilidades de previsão de cada uma
@@ -85,55 +69,59 @@ yProb = knn.predict_proba(xTest)
         print(f"Frase: {text}")
         print(f"Probabilidades: {prob}")
         print()
-"""    
+"""
 
-# binarizar as labels
-yTestBin = label_binarize(yTest, classes=['ai', 'student'])
-n_classes = yTestBin.shape[1]
+## Gráficos
+plt.figure(figsize=(10, 5))
 
-# inicializar listas para ROC e AUC
-fp = dict()
-tp = dict()
-roc_auc = dict()
+# plotar gráfico PCA (padrão)
+plt.subplot(1, 2, 1)
+pca = PCA(n_components=2)
+xTest_2D = pca.fit_transform(xTest.toarray())
 
-for i in range(n_classes):
-    fp[i], tp[i], _ = roc_curve(yTestBin[:, i], yProb[:, i])
-    roc_auc[i] = auc(fp[i], tp[i])
+for class_label, color in zip(['ai', 'student'], ['blue', 'orange']):
+    plt.scatter(xTest_2D[yTest == class_label, 0], xTest_2D[yTest == class_label, 1],
+                label=class_label, alpha=0.5, color=color)
 
-# calcular AUC
-all_fp = np.unique(np.concatenate([fp[i] for i in range(n_classes)]))
-mean_tp = np.zeros_like(all_fp)
+plt.title('PCA')
+plt.legend()
 
-for i in range(n_classes):
-    mean_tp += np.interp(all_fp, fp[i], tp[i])
+# ROC e AUC
+aiIdx = 0  # 'ai' classe 0
+studentIdx = 1  #'student' classe 1
 
-mean_tp /= n_classes
+# labels binarizadas
+yTestBinAi = (yTest == 'ai').astype(int)
+yTestBinStudent = (yTest == 'student').astype(int)
 
-fp["macro"] = all_fp
-tp["macro"] = mean_tp
-roc_auc["macro"] = auc(fp["macro"], tp["macro"])
+# prob de predicao de cada classe
+probPredicao = knn.predict_proba(xTest)
+probPredAi = probPredicao[:, aiIdx]
+probPredStudent = probPredicao[:, studentIdx]
 
-# plotar grafico ROC
+# ROC para 'ai'
+fpAi, tpAi, _ = roc_curve(yTestBinAi, probPredAi) # false positive e true positive
+rocAi = auc(fpAi, tpAi)
+
+# ROC para 'student'
+fpStudent, tpStudent, _ = roc_curve(yTestBinStudent, probPredStudent) # false positive e true positive
+rocStudent = auc(fpStudent, tpStudent)
+
+# plotar gráfico ROC
 plt.subplot(1, 2, 2)
-
-colors = ['blue', 'red']
-for i, color in zip(range(n_classes), colors):
-    plt.plot(fp[i], tp[i], color=color, lw=2,
-             label='ROC curve of class {0} (area = {1:0.2f})'
-                   ''.format(['ai', 'student'][i], roc_auc[i]))
-
-plt.plot(fp["macro"], tp["macro"], color='red', linestyle='--',
-         label='macro-average ROC curve (area = {0:0.2f})'
-               ''.format(roc_auc["macro"]))
-
-plt.plot([0, 1], [0, 1], 'k--', lw=2)
+plt.plot(fpAi, tpAi, color='blue', lw=2, label='ROC curve - Class "ai" (AUC = {:.2f})'.format(rocAi))
+plt.plot(fpStudent, tpStudent, color='orange', lw=2, label='ROC curve - Class "student" (AUC = {:.2f})'.format(rocStudent))
+plt.plot([0, 1], [0, 1], color='gray', linestyle='--', lw=2)
 plt.xlim([0.0, 1.0])
 plt.ylim([0.0, 1.05])
-plt.xlabel('False Positive Rate')
-plt.ylabel('True Positive Rate')
-plt.title('ROC Curve')
+plt.xlabel('Taxa de Falsos Positivos')
+plt.ylabel('Taxa de Verdadeiros Positivos')
+plt.title('Curvas ROC para Classes "ai" e "student"')
 plt.legend(loc="lower right")
+plt.grid(True)
 
 plt.tight_layout()
 plt.show()
+
+
 
