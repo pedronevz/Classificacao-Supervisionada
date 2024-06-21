@@ -4,7 +4,7 @@ import numpy as np
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit, train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import classification_report, accuracy_score, roc_curve, auc
+from sklearn.metrics import classification_report, accuracy_score, roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay
 from sklearn.preprocessing import label_binarize
 import nltk
 from nltk.corpus import stopwords
@@ -44,10 +44,13 @@ X_tfidf = vectorizer.fit_transform(textos) # transforma os textos em vetores TF-
 
 sss = StratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=42) # 30% dos dados para teste, 70% para treino
 
-# divisão dos dados em treinamento e teste
-for train_index, test_index in sss.split(X_tfidf, labels):
+# binarizar labels
+labels_bin = labels.map({'ai': 0, 'student': 1})
+
+# divisão dos dados em treinamento e teste, com os binarios
+for train_index, test_index in sss.split(X_tfidf, labels_bin):
     xTrain, xTest = X_tfidf[train_index], X_tfidf[test_index]
-    yTrain, yTest = labels.iloc[train_index], labels.iloc[test_index]
+    yTrain, yTest = labels_bin.iloc[train_index], labels_bin.iloc[test_index]
 
 # treinar o classificador k-NN
 knn = KNeighborsClassifier(n_neighbors=5)
@@ -75,50 +78,48 @@ print(classification_report(yTest, predicao))
 plt.figure(figsize=(10, 5))
 
 # plotar gráfico PCA (padrão)
-plt.subplot(1, 2, 1)
 pca = PCA(n_components=2)
 xTest_2D = pca.fit_transform(xTest.toarray())
 
-for class_label, color in zip(['ai', 'student'], ['blue', 'orange']):
-    plt.scatter(xTest_2D[yTest == class_label, 0], xTest_2D[yTest == class_label, 1],
-                label=class_label, alpha=0.5, color=color)
+plt.subplot(1, 2, 1)
+for i, class_label in enumerate(['ai', 'student']):
+    plt.scatter(xTest_2D[yTest == i, 0], xTest_2D[yTest == i, 1], 
+                label=class_label, alpha=0.5)
 
 plt.title('PCA')
+plt.xlabel('Componente Principal 1')
+plt.ylabel('Componente Principal 2')
 plt.legend()
 
 # ROC e AUC
-aiIdx = 0  # 'ai' classe 0
-studentIdx = 1  #'student' classe 1
-
-# labels binarizadas
-yTestBinAi = (yTest == 'ai').astype(int)
-yTestBinStudent = (yTest == 'student').astype(int)
-
 # prob de predicao de cada classe
-probPredicao = knn.predict_proba(xTest)
-probPredAi = probPredicao[:, aiIdx]
-probPredStudent = probPredicao[:, studentIdx]
+probPredicao = knn.predict_proba(xTest)[:, 1]
 
-# ROC para 'ai'
-fpAi, tpAi, _ = roc_curve(yTestBinAi, probPredAi) # false positive e true positive
-rocAi = auc(fpAi, tpAi)
+# taxas de falso positivo e verdadeiro positivo
+fp, tp, _ = roc_curve(yTest, probPredicao, pos_label=1)
 
-# ROC para 'student'
-fpStudent, tpStudent, _ = roc_curve(yTestBinStudent, probPredStudent) # false positive e true positive
-rocStudent = auc(fpStudent, tpStudent)
+roc_auc = auc(fp, tp)
 
 # plotar gráfico ROC
 plt.subplot(1, 2, 2)
-plt.plot(fpAi, tpAi, color='blue', lw=2, label='ROC curve - Class "ai" (AUC = {:.2f})'.format(rocAi))
-plt.plot(fpStudent, tpStudent, color='orange', lw=2, label='ROC curve - Class "student" (AUC = {:.2f})'.format(rocStudent))
-plt.plot([0, 1], [0, 1], color='gray', linestyle='--', lw=2)
+plt.plot(fp, tp, color='red', lw=2, label=f'Curva ROC para KNN (área = {roc_auc:.2f})')
+plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
 plt.xlim([0.0, 1.0])
 plt.ylim([0.0, 1.05])
 plt.xlabel('Taxa de Falsos Positivos')
 plt.ylabel('Taxa de Verdadeiros Positivos')
-plt.title('Curvas ROC para Classes "ai" e "student"')
+plt.title('Curva ROC para KNN')
 plt.legend(loc="lower right")
 plt.grid(True)
 
 plt.tight_layout()
+plt.show()
+
+
+# calcular a matriz de confusão
+cm = confusion_matrix(yTest, predicao)
+
+# plotar a matriz de confusão
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=knn.classes_)
+disp.plot(cmap=plt.cm.Blues)
 plt.show()
