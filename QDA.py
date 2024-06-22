@@ -1,20 +1,8 @@
-"""
-Código desenvolvido baseado no exemplo constante no curso da USP - SME0822 
-Análise Multivariada e Aprendizado Não-Supervisionado, disponível em 
-https://edisciplinas.usp.br/course/view.php?id=78145 e 
-https://github.com/cibelerusso/AnaliseMultivariadaEAprendizadoNaoSupervisionado:
-
-Referência:
-Russo, C. M. (2023). cibelerusso/AnaliseMultivariadaEAprendizadoNaoSupervisionado: 
-Análise Multivariada e Aprendizado Não Supervisionado (Version v0.0.0). 
-https://doi.org/10.5281/zenodo.10203429.
-"""
-
 import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis as QDA
 from sklearn.metrics import classification_report, accuracy_score, roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay
 import nltk
 from nltk.corpus import stopwords
@@ -40,7 +28,7 @@ dados['Text'] = dados['Text'].apply(preprocess_text)
 textos = dados['Text']
 labels = dados['Label']
 
-                                    #=== LDA ===#
+                                    #=== QDA ===#
 
 #<-- vetorização dos textos e divisão dos dados em conjuntos de treinamento e teste -->#
 
@@ -56,12 +44,12 @@ for train_index, test_index in sss.split(X_tfidf, labels_bin):
     xTrain, xTest = X_tfidf[train_index], X_tfidf[test_index]
     yTrain, yTest = labels_bin.iloc[train_index], labels_bin.iloc[test_index]
 
-#<-- treinamento do classificador LDA e previsões nos dados de testes -->#
+#<-- treinamento do classificador QDA e previsões nos dados de testes -->#
 
-lda = LDA()
-lda.fit(xTrain.toarray(), yTrain)  
+qda = QDA()
+qda.fit(xTrain.toarray(), yTrain)  
 
-predicao = lda.predict(xTest.toarray())
+predicao = qda.predict(xTest.toarray())
 
 print("Accuracy:", accuracy_score(yTest, predicao))
 print(classification_report(yTest, predicao))
@@ -97,7 +85,7 @@ plt.legend()
 
 #<-- ROC e AUC -->#
 # probabilidade de predicao de cada classe
-probPredicao = lda.predict_proba(xTest.toarray())[:, 1]
+probPredicao = qda.predict_proba(xTest.toarray())[:, 1]
 
 # taxas de falso positivo e verdadeiro positivo
 fp, tp, _ = roc_curve(yTest, probPredicao, pos_label=1)
@@ -105,13 +93,13 @@ roc_auc = auc(fp, tp)
 
 # plotar gráfico ROC
 plt.subplot(1, 2, 2)
-plt.plot(fp, tp, color='red', lw=2, label=f'Curva ROC para LDA (área = {roc_auc:.2f})')
+plt.plot(fp, tp, color='red', lw=2, label=f'Curva ROC para QDA (área = {roc_auc:.2f})')
 plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
 plt.xlim([0.0, 1.0])
 plt.ylim([0.0, 1.05])
 plt.xlabel('Taxa de Falsos Positivos')
 plt.ylabel('Taxa de Verdadeiros Positivos')
-plt.title('Curva ROC para LDA')
+plt.title('Curva ROC para QDA')
 plt.legend(loc="lower right")
 plt.grid(True)
 
